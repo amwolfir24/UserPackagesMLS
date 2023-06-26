@@ -1,0 +1,11 @@
+{
+  "DEPLOYMENT_BUCKET": "production.service.deployment.bucket",
+  "REST_API_ID": "qd7517z1ic",
+  "ROOT_RESOURCE_ID": "vcs73e4k35",
+  "MEMBERSHIP_RESOURCE_ID": "sqen4h",
+  "PACKAGES_RESOURCE_ID": "kw1zjy",
+  "AWS_ACCOUNT_ID": "480279031583",
+  "RF_VERSION": "87",
+  "AUTHORIZER_ID": "gs2s6h",
+  "AUTHORIZER_TYPE": "CUSTOM"
+}

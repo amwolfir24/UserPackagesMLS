@@ -1,0 +1,116 @@
+service: UserPackages
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  useDotenv: true
+  stage: ${opt:stage}
+  region: us-east-1
+  profile: default
+  stackName: UserPackages
+  deploymentMethod: direct
+  configValidationMode: warn
+  deploymentPrefix: paul.g@realtyna.net
+  deploymentBucket: ${file(./environments/${opt:stage}.json):DEPLOYMENT_BUCKET}
+  iam:
+    role: CustomRole
+  apiGateway:
+    restApiId: ${file(./environments/${opt:stage}.json):REST_API_ID}
+    restApiRootResourceId: ${file(./environments/${opt:stage}.json):ROOT_RESOURCE_ID}
+    restApiResources:
+      /membership: ${file(./environments/${opt:stage}.json):MEMBERSHIP_RESOURCE_ID}
+      /membership/packages: ${file(./environments/${opt:stage}.json):PACKAGES_RESOURCE_ID}
+  tracing:
+    lambda: true
+
+# lambda config
+functions:
+  membershipServices_GetListOfUserPackages_RDS:
+    handler: membershipServices_GetListOfUserPackages_RDS.lambda_handler
+    memorySize: 128
+    runtime: python3.8
+    logRetentionInDays: 14
+    versionFunctions: true
+    timeout: 3
+     #Function environment variables if your lambda need
+    environment:
+      aud: 1bqegulojkrtu5puo1fm6poa2g
+    ephemeralStorageSize: 512
+    name: membershipServices_GetListOfUserPackages_RDS
+    description: 'Gets the list of packages that the user has bought'
+    architecture: x86_64
+
+  #VPC config if you need
+#  vpc:
+#    securityGroupIds:
+#      - {security_group_id}
+#      - {security_group_id}
+#    subnetIds:
+#      - {subnet_id}
+#      - {subnet_id}
+    layers:
+      - arn:aws:lambda:us-east-1:${file(./environments/${opt:stage}.json):AWS_ACCOUNT_ID}:layer:psycopg-jwt-pytz:4
+      - arn:aws:lambda:us-east-1:${file(./environments/${opt:stage}.json):AWS_ACCOUNT_ID}:layer:realtyfeed:${file(./environments/${opt:stage}.json):RF_VERSION}
+    events:
+      - http:
+          path: membership/packages/user-packages
+          method: get
+          integration: lambda
+          cors:
+            origin: '*'
+            headers: '*'
+          private: false
+          authorizer:
+            type: ${file(./environments/${opt:stage}.json):AUTHORIZER_TYPE}
+            authorizerId: '${file(./environments/${opt:stage}.json):AUTHORIZER_ID}'
+            existing: true
+          request:
+            passThrough: WHEN_NO_TEMPLATES
+            template:
+              application/json: '{
+                                    "method": "$context.httpMethod",
+                                    "body" : $input.json(''$''),
+                                    "headers": {
+                                        #foreach($param in $input.params().header.keySet())
+                                        "$param": "$util.escapeJavaScript($input.params().header.get($param))"
+                                        #if($foreach.hasNext),#end
+                                        #end
+                                    },
+                                    "queryString" : {
+                                        #foreach($param in $input.params().querystring.keySet())
+                                        "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"
+                                        #if($foreach.hasNext),#end
+                                        #end
+                                    },
+                                    "authorizer_context":{
+                                        "user_id": "$context.authorizer.user_id"
+                                    }
+                                  }'
+
+resources:
+  Resources:
+    CustomRole:
+      Type: AWS::IAM::Role
+      Properties:
+        ManagedPolicyArns:
+          - 'arn:aws:iam::aws:policy/service-role/AWSLambdaRole'
+          - 'arn:aws:iam::aws:policy/AWSLambdaExecute'
+          - 'arn:aws:iam::aws:policy/SecretsManagerReadWrite'
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - 'lambda.amazonaws.com'
+              Action:
+                - 'sts:AssumeRole'
+            - Effect: Allow
+              Principal:
+                Service:
+                  - 'apigateway.amazonaws.com'
+              Action:
+                - 'sts:AssumeRole'
+              Condition:
+                ArnLike:
+                  AWS:SourceArn: arn:aws:execute-api:us-east-1:${file(./environments/${opt:stage}.json):AWS_ACCOUNT_ID}:${file(./environments/${opt:stage}.json):REST_API_ID}/*/*/*
